@@ -49,23 +49,23 @@ class Config:
   learning_rate: float = 1e-3
   noise_std: float = 0.1
 
-def get_dummy_dataset(input_dim, num_classes, num_batch):
+def get_dummy_dataset(input_dim, num_classes, num_batch, batch_size):
     seed = 0
-    x = np.random.RandomState(seed).randn(input_dim, num_batch).T
-    y = np.random.RandomState(seed).randint(0,32000, num_batch)
+    x = np.random.RandomState(seed).randn(input_dim, num_batch * batch_size).T
+    y = np.random.RandomState(seed).randint(0,32000, num_batch * batch_size)
     print(x[0], y[0])
-    return utils.make_batch_iterator(datasets.ArrayBatch(x=x, y=y), 1)
+    return utils.make_batch_iterator(datasets.ArrayBatch(x=x, y=y), 10)
             
 
 FLAGS = Config()
 
 output_dim = 32000
-input_dim = 4096
-
-# batch_size = 10
 num_classes = 32000
+input_dim = 4096
+batch_size = 10
 
-dataset = get_dummy_dataset(input_dim, num_classes, FLAGS.num_batch)
+
+dataset = get_dummy_dataset(input_dim, num_classes, 10, batch_size)
 
 dummy_input = next(dataset).x
 
@@ -76,7 +76,8 @@ print(dummy_input, dummy_input.shape)
 # dummy_input = np.asarray([[0]*4096 for _ in range(10)])
 
 enn = networks.MLPEnsembleMatchedPrior(
-    output_sizes=[50,50,4096],
+    # supposed to be 4096 for output_dim here
+    output_sizes=[50,50,output_dim],
     dummy_input=dummy_input,
     num_ensemble=FLAGS.index_dim,
     prior_scale=FLAGS.prior_scale,
@@ -100,7 +101,7 @@ experiment.train(FLAGS.num_batch)
 
 test_data = next(dataset)
 test_input = test_data.x
-ground_truth = test_data.y[0]
+ground_truth = test_data.y
 
 rng = hk.PRNGSequence(jax.random.PRNGKey(seed=0))
 
@@ -111,4 +112,5 @@ label = jax.numpy.argmax(preds_y, axis=1)
 
 # print(type(ground_truth), type(label))
 
-print("GT: ", ground_truth, "Pred: ", label)
+print("GT: ", ground_truth.reshape(ground_truth.shape[1], -1))
+print("Pred: ", label)

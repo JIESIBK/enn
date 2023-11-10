@@ -163,6 +163,7 @@ class Experiment(supervised_base.BaseExperiment):
         loss_metrics.update(
             {'dataset': 'train', 'step': self.step, 'sgd': True})
         self.logger.write(loss_metrics)
+        print(loss_metrics)
 
       # Periodically evaluate the other datasets.
       if self._should_eval and self.step % self._eval_log_freq == 0:
