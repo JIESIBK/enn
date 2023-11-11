@@ -1,0 +1,9 @@
+# Steps to setup GPU training on cluster
+
+# Install jaxlib GPU compatible version
+pip install --upgrade "jax[cuda11_pip]" -f https://storage.googleapis.com/jax-releases/jax_cuda_releases.html
+
+# Set some environment varables to esnure proper GPU training
+export XLA_PYTHON_CLIENT_ALLOCATOR=platform
+export XLA_PYTHON_CLIENT_MEM_FRACTION=.50
+export XLA_PYTHON_CLIENT_PREALLOCATE=false

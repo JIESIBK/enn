@@ -1,4 +1,4 @@
-name: enn_3.8
+name: cse_8803_enn
 channels:
   - defaults
   - conda-forge
@@ -217,4 +217,4 @@ dependencies:
       - pyyaml==6.0.1
       - rlax==0.1.5
       - tensorflow-probability==0.21.0
-prefix: /home/min/anaconda3/envs/enn_3.8
+prefix: /srv/kira-lab/share4/yali30/mamba/mamba_install/envs/cse_8803_enn
