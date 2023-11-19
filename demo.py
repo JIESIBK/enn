@@ -38,10 +38,38 @@ from enn.supervised import regression_data
 
 import random
 
+class MLPEnsembleMatchedPriorModified(networks.base.EnnArray):
+  """Ensemble of MLPs with matched prior functions."""
+  from typing import Sequence, Optional
+  def __init__(self,
+               output_sizes: Sequence[int],
+               dummy_input: chex.Array,
+               num_ensemble: int,
+               prior_scale: float = 1.,
+               seed: int = 0,
+               w_init: Optional[hk.initializers.Initializer] = None,
+               b_init: Optional[hk.initializers.Initializer] = None):
+    """Ensemble of MLPs with matched prior functions."""
+    mlp_priors = networks.make_mlp_ensemble_prior_fns(
+        output_sizes, dummy_input, num_ensemble, seed)
+
+    def net_fn(x: chex.Array) -> chex.Array:
+      x = hk.Flatten()(x)
+      return hk.nets.MLP(output_sizes, w_init, b_init)(x)
+    transformed = hk.without_apply_rng(hk.transform_with_state(net_fn))
+
+    ensemble = networks.EnsembleWithState(transformed, num_ensemble)
+    enn = networks.priors.EnnWithAdditivePrior(
+        enn=ensemble,
+        prior_fn=networks.combine_functions_choice_via_index(mlp_priors),
+        prior_scale=prior_scale,
+    )
+    super().__init__(enn.apply, enn.init, enn.indexer)
+
 
 @dataclasses.dataclass
 class Config:
-  num_batch: int = 100
+  num_batch: int = 200
   index_dim: int = 10
   num_index_samples: int = 10
   seed: int = 0
@@ -52,9 +80,10 @@ class Config:
 def get_dummy_dataset(input_dim, num_classes, num_batch, batch_size):
     seed = 0
     x = np.random.RandomState(seed).randn(input_dim, num_batch * batch_size).T
-    y = np.random.RandomState(seed).randint(0,32000, num_batch * batch_size)
+    y = np.random.RandomState(seed).randint(0,num_classes, num_batch * batch_size)
+    dola_distribution = np.random.RandomState(seed).randn(num_classes, num_batch * batch_size).T
     print(x[0], y[0])
-    return utils.make_batch_iterator(datasets.ArrayBatch(x=x, y=y), 10)
+    return utils.make_batch_iterator(datasets.ArrayBatch(x=x, y=y, extra={"dola_distribution": dola_distribution}), batch_size)
             
 
 FLAGS = Config()
@@ -62,7 +91,7 @@ FLAGS = Config()
 output_dim = 32000
 num_classes = 32000
 input_dim = 4096
-batch_size = 10
+batch_size = 7
 
 
 dataset = get_dummy_dataset(input_dim, num_classes, 10, batch_size)
@@ -76,6 +105,7 @@ print(dummy_input, dummy_input.shape)
 # dummy_input = np.asarray([[0]*4096 for _ in range(10)])
 
 enn = networks.MLPEnsembleMatchedPrior(
+# enn = MLPEnsembleMatchedPriorModified(
     # supposed to be 4096 for output_dim here
     output_sizes=[50,50,output_dim],
     dummy_input=dummy_input,
