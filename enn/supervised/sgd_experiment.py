@@ -208,16 +208,16 @@ class Experiment(supervised_base.BaseExperiment):
 
     # print("New training method")
   
-    while curr_loss < min_loss or curr_epoch - min_epoch < 10:
+    while (curr_loss < min_loss or curr_epoch - min_epoch < 10) and curr_loss > 0.1:
       curr_epoch += 1 
-      for _ in range(10):
+      for _ in range(num_batches):
         self.step += 1
         self.state, loss_metrics = self._sgd_step(
             self.state, next(self.dataset), next(self.rng))
 
         # Periodically log this performance as dataset=train.
-        self._train_log_freq = 10
-        if self.step % self._train_log_freq == 1:
+        self._train_log_freq = 1
+        if self.step % self._train_log_freq == 0:
           loss_metrics.update(
               {'dataset': 'train', 'step': self.step, 'sgd': True})
           self.logger.write(loss_metrics)
@@ -251,6 +251,8 @@ class Experiment(supervised_base.BaseExperiment):
       if curr_loss < min_loss:
         min_loss = curr_loss
         min_epoch = curr_epoch
+      
+    return min_loss, min_epoch 
 
   def predict(self, inputs: chex.Array, key: chex.PRNGKey) -> chex.Array:
     """Evaluate the trained model at given inputs."""
