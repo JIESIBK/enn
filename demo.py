@@ -91,7 +91,7 @@ FLAGS = Config()
 output_dim = 32000
 num_classes = 32000
 input_dim = 4096
-batch_size = 7
+batch_size = 10
 
 
 dataset = get_dummy_dataset(input_dim, num_classes, 10, batch_size)

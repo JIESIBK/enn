@@ -3,6 +3,7 @@ from cmath import exp, log
 from multiprocessing import dummy
 from operator import ne
 from telnetlib import EXOPL
+from tkinter import E
 from tokenize import Single
 import warnings
 
@@ -43,18 +44,22 @@ from enn.supervised import regression_data
 import random
 import functools
 
+import time
+current_time = int(time.time())
+
 @dataclasses.dataclass
 class Config:
-    feature_size: int = 4096
+    feature_size: int = 1024
     num_classes: int = 32000
-    num_batch: int = 200
+    num_batch: int = 10
+    batch_size: int = 10
     index_dim: int = 10
     num_index_samples: int = 100
-    seed: int = 0
+    seed: int = current_time
     prior_scale: float = 1.
-    learning_rate: float = 1e-3
+    learning_rate: float = 2e-4
+    num_epoch: int = 50
     noise_std: float = 0.1
-    epinet_hiddens: Sequence[int] = [1024,256,1024,4096]
 
 config = Config()
 
@@ -76,12 +81,12 @@ class FrozenLinerLayer(hk.Module):
 
     def __call__(self, x):
         w = hk.get_parameter(
-            "pretrained_weights", shape=(self.output_size, self.input_size), init=self.weight)
-        b = hk.get_parameter("bias", shape=(self.output_size,1), init=self.bias)
-        # w = jax.lax.stop_gradient(w)
-        # b = jax.lax.stop_gradient(b)
-        y = jnp.dot(w, x) + b
-        return jax.lax.stop_gradient(y)
+            "pretrained_weights", shape=(self.input_size, self.output_size), init=self.weight)
+        b = hk.get_parameter("bias", shape=(1, self.output_size), init=self.bias)
+        w = jax.lax.stop_gradient(w)
+        b = jax.lax.stop_gradient(b)
+        y = jnp.dot(x, w) + b
+        return y
 
 class MatrixInitializer(hk.initializers.Initializer):
     def __init__(self, weight):
@@ -117,8 +122,8 @@ class MLPEpinetWithTrainableAndPrior(networks.epinet.EpinetWithState):
     if prior_epinet_hiddens is None:
       prior_epinet_hiddens = epinet_hiddens
 
-    def epinet_fn(index: base.Index,
-                  hidden: chex.Array) -> networks.base.OutputWithPrior:
+    def epinet_fn(hidden: chex.Array,
+                  index: base.Index) -> networks.base.OutputWithPrior:
       # Creating networks
       train_epinet = networks.ProjectedMLP(
           epinet_hiddens, num_classes, index_dim, name='train_epinet')
@@ -128,6 +133,7 @@ class MLPEpinetWithTrainableAndPrior(networks.epinet.EpinetWithState):
       epi_inputs = hidden
 
       # Wiring networks: add linear epinet (+ prior) from final output layer.
+    #   print("epi_inputs: ", epi_inputs.shape)
       epi_train_logits = projection_layer(train_epinet(epi_inputs, index))
       epi_prior_logits = projection_layer(prior_epinet(epi_inputs, index))
       return networks.OutputWithPrior(
@@ -182,8 +188,11 @@ class XentLoss(losses.SingleLossFnArray):
 
             # combine with dola distributions
             # logits.shape = [batch_size, num_classes]
+            # combined_logits = jax.nn.softmax(logits) + jax.lax.stop_gradient(batch.extra['dola_distribution'])
+            combined_logits = logits + jax.lax.stop_gradient(batch.extra['dola_distribution'])
+            # combined_logits = logits
             softmax_xent = -jnp.sum(
-                labels * jax.nn.softmax(jax.nn.softmax(logits) + batch.extra['dola_distribution']), axis=1, keepdims=True)
+                labels * jax.nn.log_softmax(combined_logits), axis=1, keepdims=True)
 
             if batch.weights is None:
                 batch_weights = jnp.ones_like(batch.y)
@@ -197,10 +206,27 @@ class XentLoss(losses.SingleLossFnArray):
 
 
 # create dataset for training
-dataset = None
+def get_dummy_dataset(input_dim, num_classes, num_batch, batch_size):
+    seed = 0
+    # (num_batch * batch_size, input_dim)
+    x = np.random.RandomState(seed).randn(input_dim, num_batch * batch_size).T
+    y = np.random.RandomState(seed).randint(0,num_classes, num_batch * batch_size)
+    # (num_batch * batch_size, num_classes)
+    dola_distribution = np.random.RandomState(seed).randn(num_classes, num_batch * batch_size).T
+    dola_distribution = jax.nn.softmax(dola_distribution)
+    # print(x.shape, y.shape, dola_distribution.shape)
+    return utils.make_batch_iterator(data=datasets.ArrayBatch(x=x, 
+                                                         y=y, 
+                                                         extra={"dola_distribution": dola_distribution}), 
+                                     batch_size=batch_size)
+        
+dataset = get_dummy_dataset(config.feature_size, config.num_classes, config.num_batch, config.batch_size)
+
+# print(next(dataset).x.shape, next(dataset).y.shape, next(dataset).extra['dola_distribution'].shape)
+# print(next(dataset).extra['dola_distribution'].sum(axis=1))
 
 # load vocab head here
-vocab_head_pretrained_weight = None
+vocab_head_pretrained_weight = jax.random.uniform(jax.random.PRNGKey(42), shape=(config.feature_size, config.num_classes))
 
 vocab_head = functools.partial(projection_layer, 
                             feature_size=config.feature_size, 
@@ -208,10 +234,10 @@ vocab_head = functools.partial(projection_layer,
                             vocab_head_weight=vocab_head_pretrained_weight)
 
 epinet = MLPEpinetWithTrainableAndPrior(
-               projection_laye=vocab_head,
+               projection_layer=vocab_head,
                index_dim=config.index_dim,
-               num_classes=config.num_classes,
-               epinet_hiddens=config.epinet_hiddens)
+               num_classes=config.feature_size,
+               epinet_hiddens=[1024,256])
 
 loss_fn = losses.average_single_index_loss(
     single_loss=XentLoss(config.num_classes),
@@ -223,9 +249,26 @@ optimizer = optax.adam(config.learning_rate)
 logger = TerminalLogger('supervised_regression')
 
 experiment = supervised.Experiment(
-    enn, loss_fn, optimizer, dataset, config.seed, logger=logger)
+    epinet, loss_fn, optimizer, dataset, config.seed, logger=logger)
 
-experiment.train(config.num_batch)
+experiment.train(config.num_epoch*config.num_batch)
+
+test_data = next(dataset)
+test_input = test_data.x
+test_dola = test_data.extra['dola_distribution']
+ground_truth = test_data.y
+
+
+rng = hk.PRNGSequence(jax.random.PRNGKey(seed=42))
+net_out = experiment.predict(test_input, next(rng))
+logits = networks.parse_net_output(net_out=net_out)
+preds_y = jax.nn.softmax(logits + test_dola)
+label = jax.numpy.argmax(preds_y, axis=1)
+
+# print(type(ground_truth), type(label))
+
+print("GT: ", ground_truth.reshape(ground_truth.shape[1], -1))
+print("Pred: ", label)
 
 
 ### TODO: 4. create training and evaluation processes
