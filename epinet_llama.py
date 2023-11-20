@@ -232,7 +232,7 @@ def grid_search(model, loss_fn, dataset, seed, logger, num_batch, start_rate, en
     print("Epoch_elapsed: ", final_epochs)
 
     min_loss = min(best_losses)
-    min_pos = lr_range[best_losses.index(min_loss)]
+    min_pos = best_losses.index(min_loss)
 
     if min_pos == 0:
         start_rate = lr_range[0]
@@ -241,7 +241,7 @@ def grid_search(model, loss_fn, dataset, seed, logger, num_batch, start_rate, en
         start_rate = lr_range[min_pos-1]
         end_rate = lr_range[min_pos]      
     else:
-        if best_losses[min_loss-1] < best_losses[min_loss+1]:
+        if best_losses[min_pos-1] < best_losses[min_pos+1]:
             start_rate = lr_range[min_pos-1]
             end_rate = lr_range[min_pos]
         else:
@@ -303,7 +303,7 @@ logger = TerminalLogger('supervised_regression')
 
 # experiment.train(config.num_epoch*config.num_batch)
 
-best_loss, best_lr = grid_search(epinet, loss_fn, dataset, config.seed, logger, config.num_batch, 1e-5, 1e-2, 4)
+best_loss, best_lr = grid_search(epinet, loss_fn, dataset, config.seed, logger, config.num_batch, 1e-5, 1e-1, 5)
 
 
 ############### validation
