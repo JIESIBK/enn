@@ -37,24 +37,11 @@ from enn.supervised import regression_data
 import random
 import functools
 
-import time
-current_time = int(time.time())
+import yaml
 
-@dataclasses.dataclass
-class Config:
-    feature_size: int = 128
-    num_classes: int = 32000
-    num_batch: int = 10
-    batch_size: int = 10
-    index_dim: int = 10
-    num_index_samples: int = 100
-    seed: int = current_time
-    prior_scale: float = 1.
-    learning_rate: float = 1e-3
-    num_epoch: int = 50
-    noise_std: float = 0.1
 
-config = Config()
+with open("config.yaml", 'r') as f:
+    config = yaml.safe_load(f)
 
 
 #### Create a single linear layer with loaded weights
@@ -79,6 +66,7 @@ class FrozenLinerLayer(hk.Module):
         w = jax.lax.stop_gradient(w)
         b = jax.lax.stop_gradient(b)
         y = jnp.dot(x, w) + b
+
         return y
 
 class MatrixInitializer(hk.initializers.Initializer):
@@ -89,7 +77,7 @@ class MatrixInitializer(hk.initializers.Initializer):
     def __call__(self, shape, dtype):
         return self.weight
 
-### TODO: 1. create base network for Llama-2 
+### 1. create base network for Llama-2 
 ###          (simplification: identity matrix, receiving dola features from DoLA-enhanced model)
 
 def projection_layer(x, feature_size, logit_size, vocab_head_weight):
@@ -101,7 +89,7 @@ def projection_layer(x, feature_size, logit_size, vocab_head_weight):
 
 
 
-### TODO: 2. create epinet for the whole enn
+### 2. create epinet for the whole enn
 class MLPEpinetWithTrainableAndPrior(networks.epinet.EpinetWithState):
   """MLP epinet with matching prior function."""
   def __init__(self,
@@ -139,7 +127,7 @@ class MLPEpinetWithTrainableAndPrior(networks.epinet.EpinetWithState):
     indexer = networks.GaussianIndexer(index_dim)
     super().__init__(transformed.apply, transformed.init, indexer)
 
-### TODO: 3. create loss function
+### 3. create loss function
 
 class XentLoss(losses.SingleLossFnArray):
     """Cross-entropy single index loss with network state as auxiliary."""
@@ -214,11 +202,13 @@ def get_dummy_dataset(input_dim, num_classes, num_batch, batch_size):
                                      batch_size=batch_size)
 
 def grid_search(model, loss_fn, dataset, seed, logger, num_batch, start_rate, end_rate, num_sector):
+    file_path = "best_learning_rate.txt"
+    
     lr_range = np.logspace(np.log10(start_rate), np.log10(end_rate), num_sector).tolist()
     best_losses = []
     final_epochs = []
     for lr in lr_range:
-        optimizer = optax.adam(config.learning_rate)
+        optimizer = optax.adam(lr)
         experiment = supervised.Experiment(epinet, loss_fn, 
                                            optimizer, 
                                            dataset, seed, logger)
@@ -226,6 +216,11 @@ def grid_search(model, loss_fn, dataset, seed, logger, num_batch, start_rate, en
         best_loss, final_epoch = experiment.train(num_batch)
         best_losses.append(best_loss)
         final_epochs.append(final_epoch)
+    
+    with open(file_path, 'w') as f:
+        f.write("Learning_rate: {}\n".format(lr_range))
+        f.write("Best_loss: {}\n".format(best_losses))
+        f.write("Epoch_elapsed: {}\n".format(final_epochs))
     
     print("Learning_rate: ", lr_range)
     print("Best_loss: ", best_losses)
@@ -237,7 +232,7 @@ def grid_search(model, loss_fn, dataset, seed, logger, num_batch, start_rate, en
     if min_pos == 0:
         start_rate = lr_range[0]
         end_rate = lr_range[1]
-    elif min_pos == num_batch-1:
+    elif min_pos == num_sector-1:
         start_rate = lr_range[min_pos-1]
         end_rate = lr_range[min_pos]      
     else:
@@ -253,7 +248,7 @@ def grid_search(model, loss_fn, dataset, seed, logger, num_batch, start_rate, en
     final_epochs = []
 
     for lr in lr_range:
-        optimizer = optax.adam(config.learning_rate)
+        optimizer = optax.adam(lr)
         experiment = supervised.Experiment(epinet, loss_fn, 
                                            optimizer, 
                                            dataset, seed, logger)
@@ -261,6 +256,11 @@ def grid_search(model, loss_fn, dataset, seed, logger, num_batch, start_rate, en
         best_loss, final_epoch = experiment.train(num_batch)
         best_losses.append(best_loss)
         final_epochs.append(final_epoch)
+
+    with open(file_path, 'a') as f:
+        f.write("Learning_rate: {}\n".format(lr_range))
+        f.write("Best_loss: {}\n".format(best_losses))
+        f.write("Epoch_elapsed: {}\n".format(final_epochs))
     
     print("Learning_rate: ", lr_range)
     print("Best_loss: ", best_losses)
@@ -269,29 +269,28 @@ def grid_search(model, loss_fn, dataset, seed, logger, num_batch, start_rate, en
     return (min(best_losses), lr_range[best_losses.index(min(best_losses))])
 
 
-dataset = get_dummy_dataset(config.feature_size, config.num_classes, config.num_batch, config.batch_size)
+dataset = get_dummy_dataset(config['feature_size'], config['num_classes'], config['num_batch'], config['batch_size'])
 
 # print(next(dataset).x.shape, next(dataset).y.shape, next(dataset).extra['dola_distribution'].shape)
 # print(next(dataset).extra['dola_distribution'].sum(axis=1))
 
 # load vocab head here
-vocab_head_pretrained_weight = jax.random.uniform(jax.random.PRNGKey(42), shape=(config.feature_size, config.num_classes))
+vocab_head_pretrained_weight = jax.random.uniform(jax.random.PRNGKey(42), shape=(config['feature_size'], config['num_classes']))
 
 vocab_head = functools.partial(projection_layer, 
-                            feature_size=config.feature_size, 
-                            logit_size=config.num_classes, 
+                            feature_size=config['feature_size'], 
+                            logit_size=config['num_classes'], 
                             vocab_head_weight=vocab_head_pretrained_weight)
 
 epinet = MLPEpinetWithTrainableAndPrior(
                projection_layer=vocab_head,
-               index_dim=config.index_dim,
-               num_classes=config.feature_size,
-            #    epinet_hiddens=[1024,256])
-               epinet_hiddens=[50,50])  ## test for grid_search
+               index_dim=config['index_dim'],
+               num_classes=config['feature_size'],
+               epinet_hiddens=config['epinet_hiddens'])
 
 loss_fn = losses.average_single_index_loss(
-    single_loss=XentLoss(config.num_classes),
-    num_index_samples=config.num_index_samples
+    single_loss=XentLoss(config['num_classes']),
+    num_index_samples=config['num_index_samples']
 )
 
 logger = TerminalLogger('supervised_regression')
@@ -303,17 +302,20 @@ logger = TerminalLogger('supervised_regression')
 
 # experiment.train(config.num_epoch*config.num_batch)
 
-best_loss, best_lr = grid_search(epinet, loss_fn, dataset, config.seed, logger, config.num_batch, 1e-5, 1e-1, 5)
+# best_loss, best_lr = grid_search(epinet, loss_fn, dataset, config.seed, logger, config.num_batch, 1e-5, 1e-1, 5)
 
 
 ############### validation
 
-optimizer = optax.adam(best_lr)
+optimizer = optax.adam(config['learning_rate'])
+with open("training.log", 'w') as f:
+    f.write("Training with input: {} hidden layer size: {}".format(config['feature_size'], config['epinet_hiddens']))
+print("Training with input:", config['feature_size'], "hidden layer size:", config['epinet_hiddens'])
 
 experiment = supervised.Experiment(
-    epinet, loss_fn, optimizer, dataset, config.seed, logger)
+    epinet, loss_fn, optimizer, dataset, config['seed'], logger)
 
-experiment.train(config.num_batch)
+experiment.train(config['num_batch'])
 
 test_data = next(dataset)
 test_input = test_data.x
@@ -332,5 +334,5 @@ label = jax.numpy.argmax(preds_y, axis=1)
 print("GT: ", ground_truth.reshape(ground_truth.shape[1], -1))
 print("Pred: ", label)
 
+print("Trained with input:", config['feature_size'], "hidden layer size:", config['epinet_hiddens'])
 
-### TODO: 4. create training and evaluation processes
