@@ -51,22 +51,10 @@ tf.config.experimental.set_visible_devices([], "GPU")
 # Import util functions 
 from epinet_llama_utils import *
 
+import yaml
 
-@dataclasses.dataclass
-class Config:
-    feature_size: int = 4096*2
-    num_classes: int = 32000
-    num_batch: int = 160
-    batch_size: int = 256
-    index_dim: int = 10
-    num_index_samples: int = 100
-    seed: int = 0
-    prior_scale: float = 1.
-    learning_rate: float = 1e-3
-    num_epoch: int = 50
-    noise_std: float = 0.1
-
-config = Config()
+with open("config.yaml", 'r') as f:
+    config = yaml.safe_load(f)
 
 
 #### Create a single linear layer with loaded weights
@@ -91,6 +79,7 @@ class FrozenLinerLayer(hk.Module):
         w = jax.lax.stop_gradient(w)
         b = jax.lax.stop_gradient(b)
         y = jnp.dot(x, w) + b
+
         return y
 
 class MatrixInitializer(hk.initializers.Initializer):
@@ -101,7 +90,7 @@ class MatrixInitializer(hk.initializers.Initializer):
     def __call__(self, shape, dtype):
         return self.weight
 
-### TODO: 1. create base network for Llama-2 
+### 1. create base network for Llama-2 
 ###          (simplification: identity matrix, receiving dola features from DoLA-enhanced model)
 
 def projection_layer(x, feature_size, logit_size, vocab_head_weight):
@@ -113,7 +102,7 @@ def projection_layer(x, feature_size, logit_size, vocab_head_weight):
 
 
 
-### TODO: 2. create epinet for the whole enn
+### 2. create epinet for the whole enn
 class MLPEpinetWithTrainableAndPrior(networks.epinet.EpinetWithState):
   """MLP epinet with matching prior function."""
   def __init__(self,
@@ -151,7 +140,7 @@ class MLPEpinetWithTrainableAndPrior(networks.epinet.EpinetWithState):
     indexer = networks.GaussianIndexer(index_dim)
     super().__init__(transformed.apply, transformed.init, indexer)
 
-### TODO: 3. create loss function
+### 3. create loss function
 
 class XentLoss(losses.SingleLossFnArray):
     """Cross-entropy single index loss with network state as auxiliary."""
@@ -274,23 +263,22 @@ print("Loaded DoLa dataset !")
 # print(next(dataset).extra['dola_distribution'].sum(axis=1))
 
 # load vocab head here
-vocab_head_pretrained_weight = jax.random.uniform(jax.random.PRNGKey(42), shape=(config.feature_size, config.num_classes))
+vocab_head_pretrained_weight = jax.random.uniform(jax.random.PRNGKey(42), shape=(config['feature_size'], config['num_classes']))
 
 vocab_head = functools.partial(projection_layer, 
-                            feature_size=config.feature_size, 
-                            logit_size=config.num_classes, 
+                            feature_size=config['feature_size'], 
+                            logit_size=config['num_classes'], 
                             vocab_head_weight=vocab_head_pretrained_weight)
 
 epinet = MLPEpinetWithTrainableAndPrior(
                projection_layer=vocab_head,
-               index_dim=config.index_dim,
-               num_classes=config.feature_size,
-            #    epinet_hiddens=[1024,256])
-               epinet_hiddens=[2048,1024,512,1024,2048])  ## test for grid_search
+               index_dim=config['index_dim'],
+               num_classes=config['feature_size'],
+               epinet_hiddens=config['epinet_hiddens'])
 
 loss_fn = losses.average_single_index_loss(
-    single_loss=XentLoss(config.num_classes),
-    num_index_samples=config.num_index_samples
+    single_loss=XentLoss(config['num_classes']),
+    num_index_samples=config['num_index_samples']
 )
 
 logger = TerminalLogger('supervised_regression')
@@ -315,10 +303,16 @@ linear_decay_scheduler = optax.linear_schedule(init_value=0.001, end_value=0.000
 # best_lr = 1e-5
 optimizer = optax.adam(learning_rate=linear_decay_scheduler)
 
-experiment = supervised.Experiment(
-    linear_decay_scheduler, epinet, loss_fn, optimizer, dataset, config.seed, logger)
 
-experiment.train(config.num_batch)
+############### validation
+with open("training.log", 'w') as f:
+    f.write("Training with input: {} hidden layer size: {}".format(config['feature_size'], config['epinet_hiddens']))
+print("Training with input:", config['feature_size'], "hidden layer size:", config['epinet_hiddens'])
+
+experiment = supervised.Experiment(
+    linear_decay_scheduler, epinet, loss_fn, optimizer, dataset, config['seed'], logger)
+
+experiment.train(config['num_batch'])
 
 test_data = next(dataset)
 test_input = test_data.x
@@ -337,5 +331,5 @@ label = jax.numpy.argmax(preds_y, axis=1)
 print("GT: ", ground_truth.reshape(ground_truth.shape[1], -1))
 print("Pred: ", label)
 
+print("Trained with input:", config['feature_size'], "hidden layer size:", config['epinet_hiddens'])
 
-### TODO: 4. create training and evaluation processes

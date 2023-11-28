@@ -1,0 +1,12 @@
+feature_size: 4096
+num_classes: 32000
+num_batch: 10
+batch_size: 10
+index_dim: 10
+num_index_samples: 100
+seed: 0
+prior_scale: 1.
+learning_rate: 0.001
+num_epoch: 50
+noise_std: 0.1
+epinet_hiddens: [1024, 256]
