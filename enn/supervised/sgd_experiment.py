@@ -51,6 +51,7 @@ class Experiment(supervised_base.BaseExperiment):
 
   def __init__(
       self,
+      lr_scheduler,
       enn: networks.EnnArray,
       loss_fn: losses.LossFnArray,
       optimizer: optax.GradientTransformation,
@@ -89,6 +90,9 @@ class Experiment(supervised_base.BaseExperiment):
     # Internalize the loss_fn
     self._loss = jax.jit(functools.partial(loss_fn, self.enn))
 
+    # Init lr_scheduler
+    self._lr_scheduler = lr_scheduler
+
     # Internalize the eval datasets and metrics
     self._eval_datasets = eval_datasets
     self._eval_metrics = eval_metrics
@@ -122,6 +126,7 @@ class Experiment(supervised_base.BaseExperiment):
       loss_metrics.update({'loss': loss})
       updates, new_opt_state = optimizer.update(grads, training_state.opt_state)
       new_params = optax.apply_updates(training_state.params, updates)
+
       new_state = TrainingState(
           params=new_params,
           network_state=network_state,
@@ -208,10 +213,11 @@ class Experiment(supervised_base.BaseExperiment):
 
     # print("New training method")
   
-    while (curr_loss < min_loss or curr_epoch - min_epoch < 10) and curr_loss > 0.1:
+    while (curr_loss < min_loss or curr_epoch - min_epoch < 20) and curr_loss > 0.1:
       curr_epoch += 1 
       for _ in range(num_batches):
         self.step += 1
+
         self.state, loss_metrics = self._sgd_step(
             self.state, next(self.dataset), next(self.rng))
 

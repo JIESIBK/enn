@@ -19,6 +19,7 @@ import jax.numpy as jnp
 import optax
 import tensorflow as tf
 import tensorflow_datasets as tfds
+import torch
 
 ## ENN-demo
 #@title ENN imports
@@ -40,15 +41,26 @@ import functools
 import time
 current_time = int(time.time())
 
+# Set environment variables for using GPU with JAX for training
+import os 
+os.environ["XLA_PYTHON_CLIENT_PREALLOCATE"]="true"
+os.environ["XLA_PYTHON_CLIENT_MEM_FRACTION"]=".9"
+os.environ["XLA_PYTHON_CLIENT_ALLOCATOR"]="platform"
+tf.config.experimental.set_visible_devices([], "GPU")
+
+# Import util functions 
+from epinet_llama_utils import *
+
+
 @dataclasses.dataclass
 class Config:
-    feature_size: int = 128
+    feature_size: int = 4096*2
     num_classes: int = 32000
-    num_batch: int = 10
-    batch_size: int = 10
+    num_batch: int = 160
+    batch_size: int = 256
     index_dim: int = 10
     num_index_samples: int = 100
-    seed: int = current_time
+    seed: int = 0
     prior_scale: float = 1.
     learning_rate: float = 1e-3
     num_epoch: int = 50
@@ -208,68 +220,55 @@ def get_dummy_dataset(input_dim, num_classes, num_batch, batch_size):
     dola_distribution = np.random.RandomState(seed).randn(num_classes, num_batch * batch_size).T
     dola_distribution = jax.nn.softmax(dola_distribution)
     # print(x.shape, y.shape, dola_distribution.shape)
+
+    # Load the actual DoLa dataset for epinet training
+    feats_actual = torch.load('/srv/kira-lab/share4/yali30/fall_23/cse_8803/enn/data/dola_data_test/CSE8803-DLT/C4_data_100samples/layer_features.pt')
+    dola_actual = torch.load('/srv/kira-lab/share4/yali30/fall_23/cse_8803/enn/data/dola_data_test/CSE8803-DLT/C4_data_100samples/dola_output_logits.pt')
+    labels_actual = torch.load('/srv/kira-lab/share4/yali30/fall_23/cse_8803/enn/data/dola_data_test/CSE8803-DLT/C4_data_100samples/labels.pt')
+
+    # Remove the last row from each tensor using list comprehension as the last token does NOT have a next word prediction label
+    feats_actual = [tensor[:,:-1,:] for tensor in feats_actual]
+    dola_actual = [tensor[:-1,:] for tensor in dola_actual]
+
+    # Reshape the dataset components appropriately for epinet training
+    feats_actual = torch.cat(feats_actual, dim=1)
+    feats_actual = feats_actual.reshape(-1, input_dim)      # (num_samples, input_dim)
+    feats_actual = feats_actual.cpu().detach().numpy()
+
+    dola_actual = torch.cat(dola_actual, dim=0)             # (num_samples, 32000)
+    dola_actual = dola_actual.cpu().detach().numpy()
+    dola_actual = jax.nn.softmax(dola_actual)               # Convert the DoLa logits into softmax distributions
+
+    labels_actual = torch.cat(labels_actual, dim=1)         # (1, num_samples)
+    labels_actual = labels_actual.squeeze(0).cpu().detach().numpy()
+
+    feats_actual = feats_actual[:40960,:]
+    dola_actual = dola_actual[:40960,:]
+    labels_actual = labels_actual[:40960]
+
+    print("\n Dummy dataset shapes: ")
+    print("x.shape: ", x.shape)
+    print("y.shape: ", y.shape)
+    print("dola dist shape: ", dola_distribution.shape)
+
+    print("\n Actual dataset shapes: ")
+    print("feats_actual.shape: ", feats_actual.shape)
+    print("labels_actual.shape: ", labels_actual.shape)
+    print("dola_actual shape: ", dola_actual.shape)
+
     return utils.make_batch_iterator(data=datasets.ArrayBatch(x=x, 
                                                          y=y, 
                                                          extra={"dola_distribution": dola_distribution}), 
                                      batch_size=batch_size)
 
-def grid_search(model, loss_fn, dataset, seed, logger, num_batch, start_rate, end_rate, num_sector):
-    lr_range = np.logspace(np.log10(start_rate), np.log10(end_rate), num_sector).tolist()
-    best_losses = []
-    final_epochs = []
-    for lr in lr_range:
-        optimizer = optax.adam(config.learning_rate)
-        experiment = supervised.Experiment(epinet, loss_fn, 
-                                           optimizer, 
-                                           dataset, seed, logger)
-        print("Training with lr: ", lr)
-        best_loss, final_epoch = experiment.train(num_batch)
-        best_losses.append(best_loss)
-        final_epochs.append(final_epoch)
-    
-    print("Learning_rate: ", lr_range)
-    print("Best_loss: ", best_losses)
-    print("Epoch_elapsed: ", final_epochs)
+    # return utils.make_batch_iterator(data=datasets.ArrayBatch(x=feats_actual, 
+    #                                                      y=labels_actual, 
+    #                                                      extra={"dola_distribution": dola_actual}), 
+    #                                  batch_size=batch_size)
 
-    min_loss = min(best_losses)
-    min_pos = best_losses.index(min_loss)
-
-    if min_pos == 0:
-        start_rate = lr_range[0]
-        end_rate = lr_range[1]
-    elif min_pos == num_batch-1:
-        start_rate = lr_range[min_pos-1]
-        end_rate = lr_range[min_pos]      
-    else:
-        if best_losses[min_pos-1] < best_losses[min_pos+1]:
-            start_rate = lr_range[min_pos-1]
-            end_rate = lr_range[min_pos]
-        else:
-            start_rate = lr_range[min_pos]
-            end_rate = lr_range[min_pos+1]
-    
-    lr_range = np.linspace(start_rate, end_rate, num_sector).tolist()
-    best_losses = []
-    final_epochs = []
-
-    for lr in lr_range:
-        optimizer = optax.adam(config.learning_rate)
-        experiment = supervised.Experiment(epinet, loss_fn, 
-                                           optimizer, 
-                                           dataset, seed, logger)
-        print("Training with lr: ", lr)
-        best_loss, final_epoch = experiment.train(num_batch)
-        best_losses.append(best_loss)
-        final_epochs.append(final_epoch)
-    
-    print("Learning_rate: ", lr_range)
-    print("Best_loss: ", best_losses)
-    print("Epoch_elapsed: ", final_epochs)
-
-    return (min(best_losses), lr_range[best_losses.index(min(best_losses))])
-
-
+print("Loading DoLa dataset....")
 dataset = get_dummy_dataset(config.feature_size, config.num_classes, config.num_batch, config.batch_size)
+print("Loaded DoLa dataset !")
 
 # print(next(dataset).x.shape, next(dataset).y.shape, next(dataset).extra['dola_distribution'].shape)
 # print(next(dataset).extra['dola_distribution'].sum(axis=1))
@@ -287,7 +286,7 @@ epinet = MLPEpinetWithTrainableAndPrior(
                index_dim=config.index_dim,
                num_classes=config.feature_size,
             #    epinet_hiddens=[1024,256])
-               epinet_hiddens=[50,50])  ## test for grid_search
+               epinet_hiddens=[2048,1024,512,1024,2048])  ## test for grid_search
 
 loss_fn = losses.average_single_index_loss(
     single_loss=XentLoss(config.num_classes),
@@ -303,15 +302,21 @@ logger = TerminalLogger('supervised_regression')
 
 # experiment.train(config.num_epoch*config.num_batch)
 
-best_loss, best_lr = grid_search(epinet, loss_fn, dataset, config.seed, logger, config.num_batch, 1e-5, 1e-1, 5)
-
+# best_loss, best_lr = grid_search(epinet, loss_fn, dataset, config.seed, logger, config.num_batch, 1e-5, 1e-1, 5)
 
 ############### validation
 
-optimizer = optax.adam(best_lr)
+# Create learning_rate scheduler
+total_steps = 100
+linear_decay_scheduler = optax.linear_schedule(init_value=0.001, end_value=0.00001,
+                                               transition_steps=total_steps,
+                                               transition_begin=int(total_steps*0.1))
+
+# best_lr = 1e-5
+optimizer = optax.adam(learning_rate=linear_decay_scheduler)
 
 experiment = supervised.Experiment(
-    epinet, loss_fn, optimizer, dataset, config.seed, logger)
+    linear_decay_scheduler, epinet, loss_fn, optimizer, dataset, config.seed, logger)
 
 experiment.train(config.num_batch)
 

@@ -7,3 +7,6 @@ pyvenv.cfg
 
 # IDE files.
 .vscode
+
+# Datsets files
+data/

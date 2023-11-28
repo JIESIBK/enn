@@ -5,5 +5,8 @@ pip install --upgrade "jax[cuda11_pip]" -f https://storage.googleapis.com/jax-re
 
 # Set some environment varables to esnure proper GPU training
 export XLA_PYTHON_CLIENT_ALLOCATOR=platform
-export XLA_PYTHON_CLIENT_MEM_FRACTION=.50
+export XLA_PYTHON_CLIENT_MEM_FRACTION=.5
 export XLA_PYTHON_CLIENT_PREALLOCATE=false
+
+# Install pytorch version compatible with environemnt
+mamba install pytorch==2.0.1 torchvision==0.15.2 torchaudio==2.0.2 pytorch-cuda=11.8 -c pytorch -c nvidia
