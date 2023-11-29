@@ -55,7 +55,7 @@ import yaml
 
 with open("config.yaml", 'r') as f:
     config = yaml.safe_load(f)
-
+print("######################## Experiment config: ", config)
 
 #### Create a single linear layer with loaded weights
 class FrozenLinerLayer(hk.Module):
@@ -231,9 +231,9 @@ def get_dummy_dataset(input_dim, num_classes, num_batch, batch_size):
     labels_actual = torch.cat(labels_actual, dim=1)         # (1, num_samples)
     labels_actual = labels_actual.squeeze(0).cpu().detach().numpy()
 
-    feats_actual = feats_actual[:40960,:]
-    dola_actual = dola_actual[:40960,:]
-    labels_actual = labels_actual[:40960]
+    feats_actual = feats_actual[:num_batch * batch_size,:]
+    dola_actual = dola_actual[:num_batch * batch_size,:]
+    labels_actual = labels_actual[:num_batch * batch_size]
 
     print("\n Dummy dataset shapes: ")
     print("x.shape: ", x.shape)
@@ -256,7 +256,7 @@ def get_dummy_dataset(input_dim, num_classes, num_batch, batch_size):
     #                                  batch_size=batch_size)
 
 print("Loading DoLa dataset....")
-dataset = get_dummy_dataset(config.feature_size, config.num_classes, config.num_batch, config.batch_size)
+dataset = get_dummy_dataset(config['feature_size'], config['num_classes'], config['num_batch'], config['batch_size'])
 print("Loaded DoLa dataset !")
 
 # print(next(dataset).x.shape, next(dataset).y.shape, next(dataset).extra['dola_distribution'].shape)
@@ -295,17 +295,24 @@ logger = TerminalLogger('supervised_regression')
 ############### validation
 
 # Create learning_rate scheduler
-total_steps = 100
-linear_decay_scheduler = optax.linear_schedule(init_value=0.001, end_value=0.00001,
+total_steps = config['num_epoch']
+linear_decay_scheduler = optax.linear_schedule(init_value=config['lr_init'], end_value=config['lr_final'],
                                                transition_steps=total_steps,
-                                               transition_begin=int(total_steps*0.1))
+                                               transition_begin=int(total_steps*0.05))
 
 # best_lr = 1e-5
 optimizer = optax.adam(learning_rate=linear_decay_scheduler)
+# optimizer = optax.adam(learning_rate=config['lr'])
 
 
 ############### validation
 with open("training.log", 'w') as f:
+
+    f.write("############# Exp Config ##################### \n")
+    for key, value in config.items():
+        f.write(f"{key}: {value}\n")
+    f.write("############################################## \n")
+
     f.write("Training with input: {} hidden layer size: {}".format(config['feature_size'], config['epinet_hiddens']))
 print("Training with input:", config['feature_size'], "hidden layer size:", config['epinet_hiddens'])
 

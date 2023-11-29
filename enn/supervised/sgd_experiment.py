@@ -253,8 +253,10 @@ class Experiment(supervised_base.BaseExperiment):
             self.logger.write(eval_metrics)
       curr_loss = loss_metrics['loss']
 
-      with open("training.log", 'w') as f:
+      # Need to use append mode to prevent overwriting
+      with open("training.log", 'a') as f:
         f.write("Epoch: {}, Loss: {}".format(str(curr_epoch), str(curr_loss)))
+        f.write("\n")
       print("Epoch: {}, Loss: {}".format(str(curr_epoch), str(curr_loss)))
       if curr_loss < min_loss:
         min_loss = curr_loss
