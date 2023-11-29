@@ -138,6 +138,10 @@ class MLPEpinetWithTrainableAndPrior(networks.epinet.EpinetWithState):
     # Form ENN from haiku transformed.
     transformed = hk.without_apply_rng(hk.transform_with_state(epinet_fn))
     indexer = networks.GaussianIndexer(index_dim)
+
+    # Count total number of trainable parameters in epinet
+    
+
     super().__init__(transformed.apply, transformed.init, indexer)
 
 ### 3. create loss function
@@ -226,7 +230,8 @@ def get_dummy_dataset(input_dim, num_classes, num_batch, batch_size):
 
     dola_actual = torch.cat(dola_actual, dim=0)             # (num_samples, 32000)
     dola_actual = dola_actual.cpu().detach().numpy()
-    dola_actual = jax.nn.softmax(dola_actual)               # Convert the DoLa logits into softmax distributions
+    if not config['use_dola_raw_logits']:
+        dola_actual = jax.nn.softmax(dola_actual)               # Convert the DoLa logits into softmax distributions
 
     labels_actual = torch.cat(labels_actual, dim=1)         # (1, num_samples)
     labels_actual = labels_actual.squeeze(0).cpu().detach().numpy()
