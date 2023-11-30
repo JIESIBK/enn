@@ -211,48 +211,41 @@ def get_dummy_dataset(input_dim, num_classes, num_batch, batch_size):
     dola_distribution = jax.nn.softmax(dola_distribution)
     # # print(x.shape, y.shape, dola_distribution.shape)
 
-<<<<<<< Updated upstream
-    # # Load the actual DoLa dataset for epinet training
-    # feats_actual = torch.load('/srv/kira-lab/share4/yali30/fall_23/cse_8803/enn/data/dola_data_test/CSE8803-DLT/C4_data_100samples/layer_features.pt')
-    # dola_actual = torch.load('/srv/kira-lab/share4/yali30/fall_23/cse_8803/enn/data/dola_data_test/CSE8803-DLT/C4_data_100samples/dola_output_logits.pt')
-    # labels_actual = torch.load('/srv/kira-lab/share4/yali30/fall_23/cse_8803/enn/data/dola_data_test/CSE8803-DLT/C4_data_100samples/labels.pt')
-=======
     # Load the actual DoLa dataset for epinet training
     feats_actual = torch.load(config['hidden_feats_path'])
     dola_actual = torch.load(config['dola_dist_path'])
     labels_actual = torch.load(config['labels_path'])
->>>>>>> Stashed changes
 
-    # # Remove the last row from each tensor using list comprehension as the last token does NOT have a next word prediction label
-    # feats_actual = [tensor[:,:-1,:] for tensor in feats_actual]
-    # dola_actual = [tensor[:-1,:] for tensor in dola_actual]
+    # Remove the last row from each tensor using list comprehension as the last token does NOT have a next word prediction label
+    feats_actual = [tensor[:,:-1,:] for tensor in feats_actual]
+    dola_actual = [tensor[:-1,:] for tensor in dola_actual]
 
-    # # Reshape the dataset components appropriately for epinet training
-    # feats_actual = torch.cat(feats_actual, dim=1)
-    # feats_actual = feats_actual.reshape(-1, input_dim)      # (num_samples, input_dim)
-    # feats_actual = feats_actual.cpu().detach().numpy()
+    # Reshape the dataset components appropriately for epinet training
+    feats_actual = torch.cat(feats_actual, dim=1)
+    feats_actual = feats_actual.reshape(-1, input_dim)      # (num_samples, input_dim)
+    feats_actual = feats_actual.cpu().detach().numpy()
 
-    # dola_actual = torch.cat(dola_actual, dim=0)             # (num_samples, 32000)
-    # dola_actual = dola_actual.cpu().detach().numpy()
-    # if not config['use_dola_raw_logits']:
-    #     dola_actual = jax.nn.softmax(dola_actual)               # Convert the DoLa logits into softmax distributions
+    dola_actual = torch.cat(dola_actual, dim=0)             # (num_samples, 32000)
+    dola_actual = dola_actual.cpu().detach().numpy()
+    if not config['use_dola_raw_logits']:
+        dola_actual = jax.nn.softmax(dola_actual)               # Convert the DoLa logits into softmax distributions
 
-    # labels_actual = torch.cat(labels_actual, dim=1)         # (1, num_samples)
-    # labels_actual = labels_actual.squeeze(0).cpu().detach().numpy()
+    labels_actual = torch.cat(labels_actual, dim=1)         # (1, num_samples)
+    labels_actual = labels_actual.squeeze(0).cpu().detach().numpy()
 
-    # feats_actual = feats_actual[:num_batch * batch_size,:]
-    # dola_actual = dola_actual[:num_batch * batch_size,:]
-    # labels_actual = labels_actual[:num_batch * batch_size]
+    feats_actual = feats_actual[:num_batch * batch_size,:]
+    dola_actual = dola_actual[:num_batch * batch_size,:]
+    labels_actual = labels_actual[:num_batch * batch_size]
 
-    # print("\n Dummy dataset shapes: ")
-    # print("x.shape: ", x.shape)
-    # print("y.shape: ", y.shape)
-    # print("dola dist shape: ", dola_distribution.shape)
+    print("\n Dummy dataset shapes: ")
+    print("x.shape: ", x.shape)
+    print("y.shape: ", y.shape)
+    print("dola dist shape: ", dola_distribution.shape)
 
-    # print("\n Actual dataset shapes: ")
-    # print("feats_actual.shape: ", feats_actual.shape)
-    # print("labels_actual.shape: ", labels_actual.shape)
-    # print("dola_actual shape: ", dola_actual.shape)
+    print("\n Actual dataset shapes: ")
+    print("feats_actual.shape: ", feats_actual.shape)
+    print("labels_actual.shape: ", labels_actual.shape)
+    print("dola_actual shape: ", dola_actual.shape)
 
     return utils.make_batch_iterator(data=datasets.ArrayBatch(x=x, 
                                                          y=y, 
@@ -316,6 +309,7 @@ optimizer = optax.adam(learning_rate=linear_decay_scheduler)
 
 ############### validation
 with open("training.log", 'w') as f:
+
     f.write("############# Exp Config ##################### \n")
     for key, value in config.items():
         f.write(f"{key}: {value}\n")
@@ -334,10 +328,6 @@ with open(config['ckpt_dir'] + '/' + config['ckpt_dir'] + '.yml', 'w') as yml_f:
     yaml.dump(config, yml_f, default_flow_style=False)
       
 experiment.train(config['num_batch'])
-
-# pretrained_param_file = 'epinet_pretrained.pkl'
-# with open(pretrained_param_file, 'wb') as f:
-#     dill.dump(experiment.state.params, f)
 
 test_data = next(dataset)
 test_input = test_data.x

@@ -161,8 +161,6 @@ class Experiment(supervised_base.BaseExperiment):
         'experiment', time_delta=0)
     self._train_log_freq = train_log_freq
 
-<<<<<<< Updated upstream
-=======
     # Count total number of trainable parameters in epinet
     print("Total trainable params: ", self.count_parameters(params))
 
@@ -182,7 +180,6 @@ class Experiment(supervised_base.BaseExperiment):
       
       return total_params
 
->>>>>>> Stashed changes
   def train(self, num_batches: int):
     """Trains the experiment for specified number of batches.
 
