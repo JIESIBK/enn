@@ -139,9 +139,6 @@ class MLPEpinetWithTrainableAndPrior(networks.epinet.EpinetWithState):
     transformed = hk.without_apply_rng(hk.transform_with_state(epinet_fn))
     indexer = networks.GaussianIndexer(index_dim)
 
-    # Count total number of trainable parameters in epinet
-    
-
     super().__init__(transformed.apply, transformed.init, indexer)
 
 ### 3. create loss function
@@ -214,10 +211,17 @@ def get_dummy_dataset(input_dim, num_classes, num_batch, batch_size):
     dola_distribution = jax.nn.softmax(dola_distribution)
     # # print(x.shape, y.shape, dola_distribution.shape)
 
+<<<<<<< Updated upstream
     # # Load the actual DoLa dataset for epinet training
     # feats_actual = torch.load('/srv/kira-lab/share4/yali30/fall_23/cse_8803/enn/data/dola_data_test/CSE8803-DLT/C4_data_100samples/layer_features.pt')
     # dola_actual = torch.load('/srv/kira-lab/share4/yali30/fall_23/cse_8803/enn/data/dola_data_test/CSE8803-DLT/C4_data_100samples/dola_output_logits.pt')
     # labels_actual = torch.load('/srv/kira-lab/share4/yali30/fall_23/cse_8803/enn/data/dola_data_test/CSE8803-DLT/C4_data_100samples/labels.pt')
+=======
+    # Load the actual DoLa dataset for epinet training
+    feats_actual = torch.load(config['hidden_feats_path'])
+    dola_actual = torch.load(config['dola_dist_path'])
+    labels_actual = torch.load(config['labels_path'])
+>>>>>>> Stashed changes
 
     # # Remove the last row from each tensor using list comprehension as the last token does NOT have a next word prediction label
     # feats_actual = [tensor[:,:-1,:] for tensor in feats_actual]
@@ -261,24 +265,24 @@ def get_dummy_dataset(input_dim, num_classes, num_batch, batch_size):
     #                                  batch_size=batch_size)
 
 print("Loading DoLa dataset....")
-dataset = get_dummy_dataset(config['feature_size'], config['num_classes'], config['num_batch'], config['batch_size'])
+dataset = get_dummy_dataset(config['enn_input_size'], config['num_classes'], config['num_batch'], config['batch_size'])
 print("Loaded DoLa dataset !")
 
-# print(next(dataset).x.shape, next(dataset).y.shape, next(dataset).extra['dola_distribution'].shape)
-# print(next(dataset).extra['dola_distribution'].sum(axis=1))
-
-# load vocab head here
-vocab_head_pretrained_weight = jax.random.uniform(jax.random.PRNGKey(42), shape=(config['feature_size'], config['num_classes']))
+# load vocab head here and apply the actual LLama-2 vocab weights
+vocab_head_pretrained_weight = jax.random.uniform(jax.random.PRNGKey(42), shape=(config['enn_output_size'], config['num_classes']))
+actual_weights = np.load(config['vocab_head_path'])
+# vocab_head_pretrained_weight = jax.device_put(actual_weights.T)
+vocab_head_pretrained_weight = jnp.array(actual_weights.T)
 
 vocab_head = functools.partial(projection_layer, 
-                            feature_size=config['feature_size'], 
+                            feature_size=config['enn_output_size'], 
                             logit_size=config['num_classes'], 
                             vocab_head_weight=vocab_head_pretrained_weight)
 
 epinet = MLPEpinetWithTrainableAndPrior(
                projection_layer=vocab_head,
                index_dim=config['index_dim'],
-               num_classes=config['feature_size'],
+               num_classes=config['enn_output_size'],
                epinet_hiddens=config['epinet_hiddens'])
 
 loss_fn = losses.average_single_index_loss(
@@ -317,8 +321,9 @@ with open("training.log", 'w') as f:
         f.write(f"{key}: {value}\n")
     f.write("############################################## \n")
 
-    f.write("Training with input: {} hidden layer size: {}".format(config['feature_size'], config['epinet_hiddens']))
-print("Training with input:", config['feature_size'], "hidden layer size:", config['epinet_hiddens'])
+    f.write("Training with input: {} hidden layer size: {}".format(config['enn_input_size'], config['epinet_hiddens']))
+
+print("Training with input:", config['enn_input_size'], "hidden layer size:", config['epinet_hiddens'])
 
 experiment = supervised.Experiment(
     linear_decay_scheduler, epinet, loss_fn, optimizer, dataset, config['seed'], logger, config['patience'], config['optimal_loss'], config['record_interval'], config['ckpt_dir'])
@@ -380,5 +385,4 @@ label = jax.numpy.argmax(preds_y, axis=1)
 print("GT: \n", ground_truth.reshape(ground_truth.shape[1], -1))
 print("Dummy Pred: \n", label)
 
-print("Trained with input:", config['feature_size'], "hidden layer size:", config['epinet_hiddens'])
-
+print("Trained with input:", config['enn_input_size'], "hidden layer size:", config['epinet_hiddens'])

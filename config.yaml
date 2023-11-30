@@ -1,4 +1,5 @@
-feature_size: 2048
+enn_input_size: 8192
+enn_output_size: 4096
 num_classes: 32000
 num_batch: 10
 batch_size: 10
@@ -17,3 +18,8 @@ record_interval: 10
 ckpt_dir: 'epinet_checkpoints'
 
 use_dola_raw_logits: True
+
+hidden_feats_path: '/srv/kira-lab/share4/yali30/fall_23/cse_8803/enn/data/dola_data_test/CSE8803-DLT/C4_data_100samples/layer_features.pt'
+dola_dist_path: '/srv/kira-lab/share4/yali30/fall_23/cse_8803/enn/data/dola_data_test/CSE8803-DLT/C4_data_100samples/dola_output_logits.pt'
+labels_path: '/srv/kira-lab/share4/yali30/fall_23/cse_8803/enn/data/dola_data_test/CSE8803-DLT/C4_data_100samples/labels.pt'
+vocab_head_path: '/srv/kira-lab/share4/yali30/fall_23/cse_8803/enn/data/vocab_head_weights/lm_head_weight.npy'
