@@ -35,16 +35,16 @@ from enn.loggers import TerminalLogger
 from enn.supervised import classification_data
 from enn.supervised import regression_data
 
+
 import random
 import functools
 
-import time
-current_time = int(time.time())
+import dill
 
 # Set environment variables for using GPU with JAX for training
 import os 
 os.environ["XLA_PYTHON_CLIENT_PREALLOCATE"]="true"
-os.environ["XLA_PYTHON_CLIENT_MEM_FRACTION"]=".9"
+os.environ["XLA_PYTHON_CLIENT_MEM_FRACTION"]="1."
 os.environ["XLA_PYTHON_CLIENT_ALLOCATOR"]="platform"
 tf.config.experimental.set_visible_devices([], "GPU")
 
@@ -58,7 +58,7 @@ with open("config.yaml", 'r') as f:
 print("######################## Experiment config: ", config)
 
 #### Create a single linear layer with loaded weights
-class FrozenLinerLayer(hk.Module):
+class FrozenLinearLayer(hk.Module):
     def __init__(
         self, 
         input_size, 
@@ -74,8 +74,8 @@ class FrozenLinerLayer(hk.Module):
 
     def __call__(self, x):
         w = hk.get_parameter(
-            "pretrained_weights", shape=(self.input_size, self.output_size), init=self.weight)
-        b = hk.get_parameter("bias", shape=(1, self.output_size), init=self.bias)
+            "w", shape=(self.input_size, self.output_size), init=self.weight)
+        b = hk.get_parameter("b", shape=(1, self.output_size), init=self.bias)
         w = jax.lax.stop_gradient(w)
         b = jax.lax.stop_gradient(b)
         y = jnp.dot(x, w) + b
@@ -94,7 +94,7 @@ class MatrixInitializer(hk.initializers.Initializer):
 ###          (simplification: identity matrix, receiving dola features from DoLA-enhanced model)
 
 def projection_layer(x, feature_size, logit_size, vocab_head_weight):
-    vocab_head = FrozenLinerLayer(
+    vocab_head = FrozenLinearLayer(
                         input_size=feature_size, 
                         output_size=logit_size, 
                         weight=MatrixInitializer(vocab_head_weight))
@@ -212,43 +212,43 @@ def get_dummy_dataset(input_dim, num_classes, num_batch, batch_size):
     # (num_batch * batch_size, num_classes)
     dola_distribution = np.random.RandomState(seed).randn(num_classes, num_batch * batch_size).T
     dola_distribution = jax.nn.softmax(dola_distribution)
-    # print(x.shape, y.shape, dola_distribution.shape)
+    # # print(x.shape, y.shape, dola_distribution.shape)
 
-    # Load the actual DoLa dataset for epinet training
-    feats_actual = torch.load('/srv/kira-lab/share4/yali30/fall_23/cse_8803/enn/data/dola_data_test/CSE8803-DLT/C4_data_100samples/layer_features.pt')
-    dola_actual = torch.load('/srv/kira-lab/share4/yali30/fall_23/cse_8803/enn/data/dola_data_test/CSE8803-DLT/C4_data_100samples/dola_output_logits.pt')
-    labels_actual = torch.load('/srv/kira-lab/share4/yali30/fall_23/cse_8803/enn/data/dola_data_test/CSE8803-DLT/C4_data_100samples/labels.pt')
+    # # Load the actual DoLa dataset for epinet training
+    # feats_actual = torch.load('/srv/kira-lab/share4/yali30/fall_23/cse_8803/enn/data/dola_data_test/CSE8803-DLT/C4_data_100samples/layer_features.pt')
+    # dola_actual = torch.load('/srv/kira-lab/share4/yali30/fall_23/cse_8803/enn/data/dola_data_test/CSE8803-DLT/C4_data_100samples/dola_output_logits.pt')
+    # labels_actual = torch.load('/srv/kira-lab/share4/yali30/fall_23/cse_8803/enn/data/dola_data_test/CSE8803-DLT/C4_data_100samples/labels.pt')
 
-    # Remove the last row from each tensor using list comprehension as the last token does NOT have a next word prediction label
-    feats_actual = [tensor[:,:-1,:] for tensor in feats_actual]
-    dola_actual = [tensor[:-1,:] for tensor in dola_actual]
+    # # Remove the last row from each tensor using list comprehension as the last token does NOT have a next word prediction label
+    # feats_actual = [tensor[:,:-1,:] for tensor in feats_actual]
+    # dola_actual = [tensor[:-1,:] for tensor in dola_actual]
 
-    # Reshape the dataset components appropriately for epinet training
-    feats_actual = torch.cat(feats_actual, dim=1)
-    feats_actual = feats_actual.reshape(-1, input_dim)      # (num_samples, input_dim)
-    feats_actual = feats_actual.cpu().detach().numpy()
+    # # Reshape the dataset components appropriately for epinet training
+    # feats_actual = torch.cat(feats_actual, dim=1)
+    # feats_actual = feats_actual.reshape(-1, input_dim)      # (num_samples, input_dim)
+    # feats_actual = feats_actual.cpu().detach().numpy()
 
-    dola_actual = torch.cat(dola_actual, dim=0)             # (num_samples, 32000)
-    dola_actual = dola_actual.cpu().detach().numpy()
-    if not config['use_dola_raw_logits']:
-        dola_actual = jax.nn.softmax(dola_actual)               # Convert the DoLa logits into softmax distributions
+    # dola_actual = torch.cat(dola_actual, dim=0)             # (num_samples, 32000)
+    # dola_actual = dola_actual.cpu().detach().numpy()
+    # if not config['use_dola_raw_logits']:
+    #     dola_actual = jax.nn.softmax(dola_actual)               # Convert the DoLa logits into softmax distributions
 
-    labels_actual = torch.cat(labels_actual, dim=1)         # (1, num_samples)
-    labels_actual = labels_actual.squeeze(0).cpu().detach().numpy()
+    # labels_actual = torch.cat(labels_actual, dim=1)         # (1, num_samples)
+    # labels_actual = labels_actual.squeeze(0).cpu().detach().numpy()
 
-    feats_actual = feats_actual[:num_batch * batch_size,:]
-    dola_actual = dola_actual[:num_batch * batch_size,:]
-    labels_actual = labels_actual[:num_batch * batch_size]
+    # feats_actual = feats_actual[:num_batch * batch_size,:]
+    # dola_actual = dola_actual[:num_batch * batch_size,:]
+    # labels_actual = labels_actual[:num_batch * batch_size]
 
-    print("\n Dummy dataset shapes: ")
-    print("x.shape: ", x.shape)
-    print("y.shape: ", y.shape)
-    print("dola dist shape: ", dola_distribution.shape)
+    # print("\n Dummy dataset shapes: ")
+    # print("x.shape: ", x.shape)
+    # print("y.shape: ", y.shape)
+    # print("dola dist shape: ", dola_distribution.shape)
 
-    print("\n Actual dataset shapes: ")
-    print("feats_actual.shape: ", feats_actual.shape)
-    print("labels_actual.shape: ", labels_actual.shape)
-    print("dola_actual shape: ", dola_actual.shape)
+    # print("\n Actual dataset shapes: ")
+    # print("feats_actual.shape: ", feats_actual.shape)
+    # print("labels_actual.shape: ", labels_actual.shape)
+    # print("dola_actual shape: ", dola_actual.shape)
 
     return utils.make_batch_iterator(data=datasets.ArrayBatch(x=x, 
                                                          y=y, 
@@ -312,7 +312,6 @@ optimizer = optax.adam(learning_rate=linear_decay_scheduler)
 
 ############### validation
 with open("training.log", 'w') as f:
-
     f.write("############# Exp Config ##################### \n")
     for key, value in config.items():
         f.write(f"{key}: {value}\n")
@@ -322,9 +321,18 @@ with open("training.log", 'w') as f:
 print("Training with input:", config['feature_size'], "hidden layer size:", config['epinet_hiddens'])
 
 experiment = supervised.Experiment(
-    linear_decay_scheduler, epinet, loss_fn, optimizer, dataset, config['seed'], logger)
+    linear_decay_scheduler, epinet, loss_fn, optimizer, dataset, config['seed'], logger, config['patience'], config['optimal_loss'], config['record_interval'], config['ckpt_dir'])
 
+if not os.path.exists(config['ckpt_dir']):
+    os.makedirs(config['ckpt_dir'])
+with open(config['ckpt_dir'] + '/' + config['ckpt_dir'] + '.yml', 'w') as yml_f:
+    yaml.dump(config, yml_f, default_flow_style=False)
+      
 experiment.train(config['num_batch'])
+
+# pretrained_param_file = 'epinet_pretrained.pkl'
+# with open(pretrained_param_file, 'wb') as f:
+#     dill.dump(experiment.state.params, f)
 
 test_data = next(dataset)
 test_input = test_data.x
@@ -340,8 +348,37 @@ label = jax.numpy.argmax(preds_y, axis=1)
 
 # print(type(ground_truth), type(label))
 
-print("GT: ", ground_truth.reshape(ground_truth.shape[1], -1))
-print("Pred: ", label)
+print("GT: \n", ground_truth.reshape(ground_truth.shape[1], -1))
+print("Pred: \n", label)
+
+print("Trained with input:", config['feature_size'], "hidden layer size:", config['epinet_hiddens'])
+
+
+test_data = next(dataset)
+test_input = test_data.x
+test_dola = test_data.extra['dola_distribution']
+ground_truth = test_data.y
+
+
+############# dummy experiment to load weights ##################
+dummy_epinet = MLPEpinetWithTrainableAndPrior(
+               projection_layer=vocab_head,
+               index_dim=config['index_dim'],
+               num_classes=config['feature_size'],
+               epinet_hiddens=config['epinet_hiddens'])
+
+index = dummy_epinet.indexer(next(rng))
+with open(config['ckpt_dir'] + '/epinet_ckpt_final.pkl', 'rb') as f:
+    pretrained_params = dill.load(f)
+
+net_out, _ = dummy_epinet.apply(pretrained_params, {}, test_input, index)
+
+logits = networks.parse_net_output(net_out=net_out)
+preds_y = jax.nn.softmax(logits + test_dola)
+label = jax.numpy.argmax(preds_y, axis=1)
+
+print("GT: \n", ground_truth.reshape(ground_truth.shape[1], -1))
+print("Dummy Pred: \n", label)
 
 print("Trained with input:", config['feature_size'], "hidden layer size:", config['epinet_hiddens'])
 

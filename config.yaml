@@ -1,4 +1,4 @@
-feature_size: 8192
+feature_size: 2048
 num_classes: 32000
 num_batch: 10
 batch_size: 10
@@ -10,6 +10,10 @@ lr_init: 0.0001
 lr_final: 0.0001
 num_epoch: 100
 noise_std: 0.1
-epinet_hiddens: [2048,1024,2048]
+epinet_hiddens: [512,512]
+patience: 20
+optimal_loss: 0.1
+record_interval: 10
+ckpt_dir: 'epinet_checkpoints'
 
 use_dola_raw_logits: True

@@ -1,4 +1,9 @@
-def grid_search(model, loss_fn, dataset, seed, logger, num_batch, start_rate, end_rate, num_sector):
+import numpy as np
+import optax
+from enn import supervised
+import dill
+
+def grid_search(model, config, epinet, loss_fn, dataset, seed, logger, num_batch, start_rate, end_rate, num_sector):
     lr_range = np.logspace(np.log10(start_rate), np.log10(end_rate), num_sector).tolist()
     best_losses = []
     final_epochs = []

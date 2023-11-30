@@ -31,6 +31,8 @@ import haiku as hk
 import jax
 import optax
 
+import os
+import dill
 
 class TrainingState(NamedTuple):
   params: hk.Params
@@ -58,6 +60,10 @@ class Experiment(supervised_base.BaseExperiment):
       dataset: datasets.ArrayBatchIterator,
       seed: int = 0,
       logger: Optional[loggers.Logger] = None,
+      patience: int = 20,
+      optimal_loss: float = 0.1,
+      record_interval: int = 10,
+      ckpt_folder: str = 'epinet_checkpoints',
       train_log_freq: int = 1,
       eval_datasets: Optional[Dict[str, datasets.ArrayBatchIterator]] = None,
       eval_metrics: Optional[Dict[str, metrics.MetricCalculator]] = None,
@@ -92,6 +98,12 @@ class Experiment(supervised_base.BaseExperiment):
 
     # Init lr_scheduler
     self._lr_scheduler = lr_scheduler
+    self._patience = patience
+    self._optimal_loss = optimal_loss
+
+    # The interval to save the checkpoint of model
+    self._record_interval = record_interval
+    self._ckpt_folder = ckpt_folder
 
     # Internalize the eval datasets and metrics
     self._eval_datasets = eval_datasets
@@ -134,13 +146,12 @@ class Experiment(supervised_base.BaseExperiment):
       )
       return new_state, loss_metrics
     self._sgd_step = jax.jit(sgd_step)
-    # self._sgd_step = sgd_step
 
     # Initialize networks
     if init_x is None:
       batch = next(self.dataset)
       init_x = batch.x
-    # print("init_x: ", init_x.shape)
+
     index = self.enn.indexer(next(self.rng))
     params, network_state = self.enn.init(next(self.rng), init_x, index)
     opt_state = optimizer.init(params)
@@ -149,52 +160,6 @@ class Experiment(supervised_base.BaseExperiment):
     self.logger = logger or loggers.make_default_logger(
         'experiment', time_delta=0)
     self._train_log_freq = train_log_freq
-
-  # def train(self, num_batches: int):
-  #   """Trains the experiment for specified number of batches.
-
-  #   Note that this training is *stateful*, the experiment keeps track of the
-  #   total number of training steps that have occured. This method *also* logs
-  #   the training and evaluation metrics periodically.
-
-  #   Args:
-  #     num_batches: the number of training batches, and SGD steps, to perform.
-  #   """
-  #   for _ in range(num_batches):
-  #     self.step += 1
-  #     self.state, loss_metrics = self._sgd_step(
-  #         self.state, next(self.dataset), next(self.rng))
-
-  #     # Periodically log this performance as dataset=train.
-  #     self._train_log_freq = 10
-  #     if self.step % self._train_log_freq == 1:
-  #       loss_metrics.update(
-  #           {'dataset': 'train', 'step': self.step, 'sgd': True})
-  #       self.logger.write(loss_metrics)
-  #       # print(loss_metrics)
-  #       print("Step: " + str(loss_metrics['step']) + ", Loss: " + str(loss_metrics['loss']))
-  #       # print("Parameters: ", self.state.params['prior_epinet/~/mlp/~/linear_0']['w'])
-  #     # Periodically evaluate the other datasets.
-  #     if self._should_eval and self.step % self._eval_log_freq == 0:
-  #       for name, dataset in self._eval_datasets.items():
-  #         # Evaluation happens on a single batch
-  #         eval_batch = next(dataset)
-  #         eval_metrics = {'dataset': name, 'step': self.step, 'sgd': False}
-  #         # Forward the network once, then evaluate all the metrics
-  #         net_out = self._batch_fwd(
-  #             self.state.params,
-  #             self.state.network_state,
-  #             eval_batch.x,
-  #             jax.random.split(next(self.rng), self._eval_enn_samples),
-  #         )
-  #         logits = networks.parse_net_output(net_out)
-  #         for metric_name, metric_calc in self._eval_metrics.items():
-  #           eval_metrics.update({
-  #               metric_name: metric_calc(logits, eval_batch.y),
-  #           })
-
-  #         # Write all the metrics to the logger
-  #         self.logger.write(eval_metrics)
 
   def train(self, num_batches: int):
     """Trains the experiment for specified number of batches.
@@ -213,13 +178,21 @@ class Experiment(supervised_base.BaseExperiment):
 
     # print("New training method")
   
-    while (curr_loss < min_loss or curr_epoch - min_epoch < 20) and curr_loss > 0.1:
+    while (curr_loss < min_loss or curr_epoch - min_epoch < self._patience) and curr_loss > self._optimal_loss:
       curr_epoch += 1 
       for _ in range(num_batches):
         self.step += 1
 
         self.state, loss_metrics = self._sgd_step(
-            self.state, next(self.dataset), next(self.rng))
+          self.state, next(self.dataset), next(self.rng))
+        
+        # Periodically save the checkpoints
+        if curr_epoch and curr_epoch % self._record_interval == 0:
+          ckpt_file = f'epinet_ckpt_{curr_epoch}.pkl'
+          with open(self._ckpt_folder + '/' + ckpt_file, 'wb') as f:
+              dill.dump(self.state.params, f)
+          with open(self._ckpt_folder + '/epinet_ckpt_final.pkl', 'wb') as f:
+              dill.dump(self.state.params, f)
 
         # Periodically log this performance as dataset=train.
         self._train_log_freq = 1
@@ -227,9 +200,6 @@ class Experiment(supervised_base.BaseExperiment):
           loss_metrics.update(
               {'dataset': 'train', 'step': self.step, 'sgd': True})
           self.logger.write(loss_metrics)
-          # print(loss_metrics)
-          # print("Step: " + str(loss_metrics['step']) + ", Loss: " + str(loss_metrics['loss']))
-          # print("Parameters: ", self.state.params['prior_epinet/~/mlp/~/linear_0']['w'])
         # Periodically evaluate the other datasets.
         if self._should_eval and self.step % self._eval_log_freq == 0:
           for name, dataset in self._eval_datasets.items():

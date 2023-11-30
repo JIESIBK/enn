@@ -10,3 +10,15 @@ pyvenv.cfg
 
 # Datsets files
 data/
+
+enn/__pycache__/
+enn/checkpoints/__pycache__/
+enn/data_noise/__pycache__/
+enn/datasets/__pycache__/
+enn/datasets/transforms/__pycache__/
+enn/losses/__pycache__/
+enn/metrics/__pycache__/
+enn/networks/__pycache__/
+enn/networks/epinet/__pycache__/
+enn/networks/resnet/__pycache__/
+enn/supervised/__pycache__/
