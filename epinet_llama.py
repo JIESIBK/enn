@@ -185,6 +185,10 @@ class XentLoss(losses.SingleLossFnArray):
             # logits.shape = [batch_size, num_classes]
             # combined_logits = jax.nn.softmax(logits) + jax.lax.stop_gradient(batch.extra['dola_distribution'])
             combined_logits = logits + jax.lax.stop_gradient(batch.extra['dola_distribution'])
+
+            # import pdb
+            # pdb.set_trace()
+
             # combined_logits = logits
             softmax_xent = -jnp.sum(
                 labels * jax.nn.log_softmax(combined_logits), axis=1, keepdims=True)
@@ -233,16 +237,24 @@ def get_dummy_dataset(input_dim, num_classes, num_batch, batch_size):
     labels_actual = torch.cat(labels_actual, dim=1)         # (1, num_samples)
     labels_actual = labels_actual.squeeze(0).cpu().detach().numpy()
 
+    print("\n Full dataset shapes: ")
+    print("feats_actual.shape: ", feats_actual.shape)
+    print("labels_actual.shape: ", labels_actual.shape)
+    print("dola_actual shape: ", dola_actual.shape)
+
+    import pdb
+    pdb.set_trace()
+
     feats_actual = feats_actual[:num_batch * batch_size,:]
     dola_actual = dola_actual[:num_batch * batch_size,:]
     labels_actual = labels_actual[:num_batch * batch_size]
 
-    print("\n Dummy dataset shapes: ")
-    print("x.shape: ", x.shape)
-    print("y.shape: ", y.shape)
-    print("dola dist shape: ", dola_distribution.shape)
+    # print("\n Dummy dataset shapes: ")
+    # print("x.shape: ", x.shape)
+    # print("y.shape: ", y.shape)
+    # print("dola dist shape: ", dola_distribution.shape)
 
-    print("\n Actual dataset shapes: ")
+    print("\n Sliced Dataset shape: ")
     print("feats_actual.shape: ", feats_actual.shape)
     print("labels_actual.shape: ", labels_actual.shape)
     print("dola_actual shape: ", dola_actual.shape)
@@ -263,9 +275,22 @@ print("Loaded DoLa dataset !")
 
 # load vocab head here and apply the actual LLama-2 vocab weights
 vocab_head_pretrained_weight = jax.random.uniform(jax.random.PRNGKey(42), shape=(config['enn_output_size'], config['num_classes']))
-actual_weights = np.load(config['vocab_head_path'])
+# actual_weights = np.load(config['vocab_head_path'])
 # vocab_head_pretrained_weight = jax.device_put(actual_weights.T)
+# vocab_head_pretrained_weight = jnp.array(actual_weights.T)
+
+# Load LLaMa original vocab_head from the pytorch safe_tensor
+from safetensors import safe_open
+tensors = {}
+with safe_open(config['vocab_head_path'], framework="pt", device="cpu") as f:
+    for key in f.keys():
+        tensors[key] = f.get_tensor(key)
+actual_weights = tensors['lm_head.weight']
+actual_weights = actual_weights.detach().cpu().numpy().astype(np.float32)
 vocab_head_pretrained_weight = jnp.array(actual_weights.T)
+
+# import pdb
+# pdb.set_trace()
 
 vocab_head = functools.partial(projection_layer, 
                             feature_size=config['enn_output_size'], 
@@ -308,7 +333,8 @@ optimizer = optax.adam(learning_rate=linear_decay_scheduler)
 
 
 ############### validation
-with open("training.log", 'w') as f:
+train_log_file = f"training_#{config['train_exp_num']}.log"
+with open(train_log_file, 'w') as f:
 
     f.write("############# Exp Config ##################### \n")
     for key, value in config.items():
@@ -320,7 +346,7 @@ with open("training.log", 'w') as f:
 print("Training with input:", config['enn_input_size'], "hidden layer size:", config['epinet_hiddens'])
 
 experiment = supervised.Experiment(
-    linear_decay_scheduler, epinet, loss_fn, optimizer, dataset, config['seed'], logger, config['patience'], config['optimal_loss'], config['record_interval'], config['ckpt_dir'])
+    linear_decay_scheduler, train_log_file, epinet, loss_fn, optimizer, dataset, config['seed'], logger, config['patience'], config['optimal_loss'], config['record_interval'], config['ckpt_dir'])
 
 if not os.path.exists(config['ckpt_dir']):
     os.makedirs(config['ckpt_dir'])
@@ -374,5 +400,3 @@ label = jax.numpy.argmax(preds_y, axis=1)
 
 print("GT: \n", ground_truth.reshape(ground_truth.shape[1], -1))
 print("Dummy Pred: \n", label)
-
-print("Trained with input:", config['enn_input_size'], "hidden layer size:", config['epinet_hiddens'])

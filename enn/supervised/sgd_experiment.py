@@ -54,6 +54,7 @@ class Experiment(supervised_base.BaseExperiment):
   def __init__(
       self,
       lr_scheduler,
+      log_file,
       enn: networks.EnnArray,
       loss_fn: losses.LossFnArray,
       optimizer: optax.GradientTransformation,
@@ -112,6 +113,9 @@ class Experiment(supervised_base.BaseExperiment):
     self._eval_enn_samples = eval_enn_samples
     self._should_eval = True if eval_metrics and eval_datasets else False
 
+    # Create log file for training
+    self.train_log_file = log_file
+
     # Forward network at random index
     def forward(params: hk.Params,
                 state: hk.State,
@@ -159,10 +163,14 @@ class Experiment(supervised_base.BaseExperiment):
     self.step = 0
     self.logger = logger or loggers.make_default_logger(
         'experiment', time_delta=0)
-    self._train_log_freq = train_log_freq
+    self._train_l166og_freq = train_log_freq
 
     # Count total number of trainable parameters in epinet
     print("Total trainable params: ", self.count_parameters(params))
+    with open(self.train_log_file, 'a') as f:
+      f.write("\n Total trainable params: ")
+      f.write(str(self.count_parameters(params)))
+      f.write("\n")
 
   def count_parameters(self, params):
       total_params = 0
@@ -210,8 +218,8 @@ class Experiment(supervised_base.BaseExperiment):
           ckpt_file = f'epinet_ckpt_{curr_epoch}.pkl'
           with open(self._ckpt_folder + '/' + ckpt_file, 'wb') as f:
               dill.dump(self.state.params, f)
-          with open(self._ckpt_folder + '/epinet_ckpt_final.pkl', 'wb') as f:
-              dill.dump(self.state.params, f)
+        #   with open(self._ckpt_folder + '/epinet_ckpt_final.pkl', 'wb') as f:
+        #       dill.dump(self.state.params, f)
 
         # Periodically log this performance as dataset=train.
         self._train_log_freq = 1
@@ -243,7 +251,7 @@ class Experiment(supervised_base.BaseExperiment):
       curr_loss = loss_metrics['loss']
 
       # Need to use append mode to prevent overwriting
-      with open("training.log", 'a') as f:
+      with open(self.train_log_file, 'a') as f:
         f.write("Epoch: {}, Loss: {}".format(str(curr_epoch), str(curr_loss)))
         f.write("\n")
       print("Epoch: {}, Loss: {}".format(str(curr_epoch), str(curr_loss)))

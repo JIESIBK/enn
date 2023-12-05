@@ -1,9 +1,9 @@
 enn_input_size: 8192
 enn_output_size: 4096
 num_classes: 32000
-num_batch: 10
-batch_size: 10
-index_dim: 10
+num_batch: 497
+batch_size: 512
+index_dim: 6
 num_index_samples: 100
 seed: 0
 prior_scale: 1.
@@ -11,15 +11,17 @@ lr_init: 0.0001
 lr_final: 0.0001
 num_epoch: 100
 noise_std: 0.1
-epinet_hiddens: [512,512]
+epinet_hiddens: [1024,1024]
 patience: 20
 optimal_loss: 0.1
 record_interval: 10
-ckpt_dir: 'epinet_checkpoints'
+
+ckpt_dir: 'epinet_correct_dataset_500'
+train_exp_num: 9
 
 use_dola_raw_logits: True
 
-hidden_feats_path: '/srv/kira-lab/share4/yali30/fall_23/cse_8803/enn/data/dola_data_test/CSE8803-DLT/C4_data_100samples/layer_features.pt'
-dola_dist_path: '/srv/kira-lab/share4/yali30/fall_23/cse_8803/enn/data/dola_data_test/CSE8803-DLT/C4_data_100samples/dola_output_logits.pt'
-labels_path: '/srv/kira-lab/share4/yali30/fall_23/cse_8803/enn/data/dola_data_test/CSE8803-DLT/C4_data_100samples/labels.pt'
-vocab_head_path: '/srv/kira-lab/share4/yali30/fall_23/cse_8803/enn/data/vocab_head_weights/lm_head_weight.npy'
+hidden_feats_path: '/srv/kira-lab/share4/yali30/fall_23/cse_8803/DoLa/data/100_samples/layer_features.pt'
+dola_dist_path: '/srv/kira-lab/share4/yali30/fall_23/cse_8803/DoLa/data/100_samples/dola_output_logits.pt'
+labels_path: '/srv/kira-lab/share4/yali30/fall_23/cse_8803/DoLa/data/100_samples/labels.pt'
+vocab_head_path: '/srv/kira-lab/share4/yali30/fall_23/cse_8803/enn/data/weights/lm_head_weight.safetensors'

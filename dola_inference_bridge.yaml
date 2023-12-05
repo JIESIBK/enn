@@ -1,0 +1,2 @@
+checkpoint_path: '/srv/kira-lab/share4/yali30/fall_23/cse_8803/enn/training_logs/corrected_dataset/epinet_correct_data_100_samples/epinet_ckpt_20.pkl'
+config_path: '/srv/kira-lab/share4/yali30/fall_23/cse_8803/enn/training_logs/corrected_dataset/epinet_correct_data_100_samples/epinet_correct_dataset.yml'
